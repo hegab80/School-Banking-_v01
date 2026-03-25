@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user in the school banking system (student or teacher).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "username": { "type": "string" },
+        "full_name": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "teacher"] },
+        "is_frozen": { "type": "boolean" },
+        "balance": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "username", "full_name", "role", "is_frozen", "balance", "created_at"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A financial transaction in the system.",
+      "type": "object",
+      "properties": {
+        "from_user_id": { "type": "string", "description": "UID of sender, null if teacher deposit" },
+        "to_user_id": { "type": "string", "description": "UID of receiver" },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["deposit", "withdrawal", "transfer", "adjustment"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["to_user_id", "amount", "description", "type", "created_at"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Collection of all users (students and teachers)."
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Collection of all transactions."
+    }
+  }
+}

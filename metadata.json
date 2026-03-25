@@ -1,0 +1,7 @@
+{
+  "name": "AL Bashaer School Banking",
+  "description": "School Banking Web App for AL Bashaer International School with Virtual Economy and Voice Conversations",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

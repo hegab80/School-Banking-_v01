@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher' || 
+        (request.auth.token.email == "m.hegab.eg@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isFrozen(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.is_frozen == true;
+    }
+
+    function isValidUser() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['uid', 'email', 'username', 'full_name', 'role', 'is_frozen', 'balance', 'created_at']) &&
+             data.uid is string && (data.uid == request.auth.uid || isAdmin()) &&
+             data.email is string &&
+             data.username is string && data.username.size() >= 3 && data.username.size() <= 30 &&
+             data.full_name is string && data.full_name.size() > 0 && data.full_name.size() <= 100 &&
+             data.role in ['student', 'teacher', 'vendor'] &&
+             data.is_frozen is bool &&
+             data.balance is number && data.balance >= 0 &&
+             data.created_at is string;
+    }
+
+    function isValidTransaction() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['to_user_id', 'amount', 'description', 'type', 'created_at']) &&
+             data.to_user_id is string &&
+             data.amount is number && data.amount > 0 &&
+             data.description is string && data.description.size() <= 200 &&
+             data.type in ['deposit', 'withdrawal', 'transfer', 'adjustment'] &&
+             data.created_at is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    
+    match /users/{userId} {
+      // Read: Users can read their own profile. Teachers can read all profiles.
+      // We also need students to read other students' profiles (at least username/full_name) to send money.
+      // To prevent PII leak, we should ideally separate public/private, but for this MVP, 
+      // we'll allow authenticated users to read basic user info, or just allow read if authenticated.
+      allow read: if isAuthenticated();
+      
+      // Create: Users can create their own profile. Default role must be 'student' unless admin.
+      allow create: if isAuthenticated() && isValidUser() && 
+                    ((isOwner(userId) && request.resource.data.role == 'student') || isAdmin());
+      
+      // Update: 
+      // Teachers can update anything.
+      // Students can only update balances (their own and others) during transfers, and cannot change roles/frozen status.
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance']) &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.is_frozen == resource.data.is_frozen &&
+          request.resource.data.uid == resource.data.uid &&
+          !isFrozen(userId)
+        )
+      );
+      
+      allow delete: if isAdmin();
+    }
+    
+    match /transactions/{transactionId} {
+      // Read: Users can read their own transactions. Teachers can read all.
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.from_user_id == request.auth.uid || 
+        resource.data.to_user_id == request.auth.uid
+      );
+      
+      // Create: 
+      // Teachers can create any transaction.
+      // Students can only create 'transfer' transactions where they are the sender.
+      allow create: if isAuthenticated() && isValidTransaction() && (
+        isAdmin() || 
+        (
+          request.resource.data.type == 'transfer' &&
+          (request.resource.data.from_user_id == request.auth.uid || request.resource.data.from_user_id == request.auth.token.email) &&
+          !isFrozen(request.resource.data.from_user_id)
+        )
+      );
+      
+      allow update, delete: if false; // Transactions are immutable
+    }
+  }
+}
